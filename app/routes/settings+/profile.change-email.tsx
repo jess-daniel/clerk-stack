@@ -14,11 +14,6 @@ import { z } from 'zod'
 import { ErrorList, Field } from '#app/components/forms.tsx'
 import { Icon } from '#app/components/ui/icon.tsx'
 import { StatusButton } from '#app/components/ui/status-button.tsx'
-import {
-	prepareVerification,
-	requireRecentVerification,
-	type VerifyFunctionArgs,
-} from '#app/routes/_auth+/verify.tsx'
 import { requireUserId } from '#app/utils/auth.server.ts'
 import { prisma } from '#app/utils/db.server.ts'
 import { sendEmail } from '#app/utils/email.server.ts'
@@ -35,69 +30,11 @@ export const handle: BreadcrumbHandle & SEOHandle = {
 
 const newEmailAddressSessionKey = 'new-email-address'
 
-export async function handleVerification({
-	request,
-	submission,
-}: VerifyFunctionArgs) {
-	await requireRecentVerification(request)
-	invariant(
-		submission.status === 'success',
-		'Submission should be successful by now',
-	)
-
-	const verifySession = await verifySessionStorage.getSession(
-		request.headers.get('cookie'),
-	)
-	const newEmail = verifySession.get(newEmailAddressSessionKey)
-	if (!newEmail) {
-		return json(
-			{
-				result: submission.reply({
-					formErrors: [
-						'You must submit the code on the same device that requested the email change.',
-					],
-				}),
-			},
-			{ status: 400 },
-		)
-	}
-	const preUpdateUser = await prisma.user.findFirstOrThrow({
-		select: { email: true },
-		where: { id: submission.value.target },
-	})
-	const user = await prisma.user.update({
-		where: { id: submission.value.target },
-		select: { id: true, email: true, username: true },
-		data: { email: newEmail },
-	})
-
-	void sendEmail({
-		to: preUpdateUser.email,
-		subject: 'Epic Stack email changed',
-		react: <EmailChangeNoticeEmail userId={user.id} />,
-	})
-
-	return redirectWithToast(
-		'/settings/profile',
-		{
-			title: 'Email Changed',
-			type: 'success',
-			description: `Your email has been changed to ${user.email}`,
-		},
-		{
-			headers: {
-				'set-cookie': await verifySessionStorage.destroySession(verifySession),
-			},
-		},
-	)
-}
-
 const ChangeEmailSchema = z.object({
 	email: EmailSchema,
 })
 
 export async function loader({ request }: LoaderFunctionArgs) {
-	await requireRecentVerification(request)
 	const userId = await requireUserId(request)
 	const user = await prisma.user.findUnique({
 		where: { id: userId },
@@ -133,37 +70,6 @@ export async function action({ request }: ActionFunctionArgs) {
 		return json(
 			{ result: submission.reply() },
 			{ status: submission.status === 'error' ? 400 : 200 },
-		)
-	}
-	const { otp, redirectTo, verifyUrl } = await prepareVerification({
-		period: 10 * 60,
-		request,
-		target: userId,
-		type: 'change-email',
-	})
-
-	const response = await sendEmail({
-		to: submission.value.email,
-		subject: `Epic Notes Email Change Verification`,
-		react: <EmailChangeEmail verifyUrl={verifyUrl.toString()} otp={otp} />,
-	})
-
-	if (response.status === 'success') {
-		const verifySession = await verifySessionStorage.getSession()
-		verifySession.set(newEmailAddressSessionKey, submission.value.email)
-		return redirect(redirectTo.toString(), {
-			headers: {
-				'set-cookie': await verifySessionStorage.commitSession(verifySession),
-			},
-		})
-	} else {
-		return json(
-			{
-				result: submission.reply({ formErrors: [response.error.message] }),
-			},
-			{
-				status: 500,
-			},
 		)
 	}
 }

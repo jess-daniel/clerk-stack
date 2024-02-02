@@ -25,6 +25,11 @@ import {
 	useMatches,
 	useSubmit,
 } from '@remix-run/react'
+import { rootAuthLoader } from "@clerk/remix/ssr.server";
+import { 
+	ClerkApp, 
+	ClerkErrorBoundary 
+} from "@clerk/remix";
 import { withSentry } from '@sentry/remix'
 import { useRef } from 'react'
 import { HoneypotProvider } from 'remix-utils/honeypot/react'
@@ -87,72 +92,71 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => {
 	return [
 		{ title: data ? 'Epic Notes' : 'Error | Epic Notes' },
 		{ name: 'description', content: `Your own captain's log` },
+		{ viewport: "width=device-width, initial-scale=1" },
 	]
 }
 
-export async function loader({ request }: LoaderFunctionArgs) {
+export async function loader(args: LoaderFunctionArgs) {
 	const timings = makeTimings('root loader')
-	const userId = await time(() => getUserId(request), {
-		timings,
-		type: 'getUserId',
-		desc: 'getUserId in root',
-	})
 
-	const user = userId
-		? await time(
-				() =>
-					prisma.user.findUniqueOrThrow({
-						select: {
-							id: true,
-							name: true,
-							username: true,
-							image: { select: { id: true } },
-							roles: {
-								select: {
-									name: true,
-									permissions: {
-										select: { entity: true, action: true, access: true },
+	return rootAuthLoader(args, async ({request}) => {
+		const {sessionId, userId, getToken } = request.auth;
+
+		const user = userId
+			? await time(
+					() =>
+						prisma.user.findUniqueOrThrow({
+							select: {
+								id: true,
+								name: true,
+								username: true,
+								image: { select: { id: true } },
+								roles: {
+									select: {
+										name: true,
+										permissions: {
+											select: { entity: true, action: true, access: true },
+										},
 									},
 								},
 							},
-						},
-						where: { id: userId },
-					}),
-				{ timings, type: 'find user', desc: 'find user in root' },
-			)
-		: null
-	if (userId && !user) {
-		console.info('something weird happened')
-		// something weird happened... The user is authenticated but we can't find
-		// them in the database. Maybe they were deleted? Let's log them out.
-		await logout({ request, redirectTo: '/' })
-	}
-	const { toast, headers: toastHeaders } = await getToast(request)
-	const honeyProps = honeypot.getInputProps()
-
-	return json(
-		{
-			user,
-			requestInfo: {
-				hints: getHints(request),
-				origin: getDomainUrl(request),
-				path: new URL(request.url).pathname,
-				userPrefs: {
-					theme: getTheme(request),
+							where: { id: userId },
+						}),
+					{ timings, type: 'find user', desc: 'find user in root' },
+				)
+			: null
+		if (userId && !user) {
+			console.info('something weird happened');
+		}
+		const { toast, headers: toastHeaders } = await getToast(request)
+		const honeyProps = honeypot.getInputProps()
+	
+		return json(
+			{
+				user,
+				requestInfo: {
+					hints: getHints(request),
+					origin: getDomainUrl(request),
+					path: new URL(request.url).pathname,
+					userPrefs: {
+						theme: getTheme(request),
+					},
 				},
+				ENV: getEnv(),
+				toast,
+				honeyProps,
 			},
-			ENV: getEnv(),
-			toast,
-			honeyProps,
-		},
-		{
-			headers: combineHeaders(
-				{ 'Server-Timing': timings.toString() },
-				toastHeaders,
-			),
-		},
-	)
+			{
+				headers: combineHeaders(
+					{ 'Server-Timing': timings.toString() },
+					toastHeaders,
+				),
+			},
+		)
+	})
 }
+
+export const ErrorBoundary = ClerkErrorBoundary(CustomErrorBoundary);
 
 export const headers: HeadersFunction = ({ loaderHeaders }) => {
 	const headers = {
@@ -286,7 +290,7 @@ function AppWithProviders() {
 	)
 }
 
-export default withSentry(AppWithProviders)
+export default withSentry(ClerkApp(AppWithProviders))
 
 function UserDropdown() {
 	const user = useUser()
@@ -427,7 +431,7 @@ function ThemeSwitch({ userPreference }: { userPreference?: Theme | null }) {
 	)
 }
 
-export function ErrorBoundary() {
+export function CustomErrorBoundary() {
 	// the nonce doesn't rely on the loader so we can access that
 	const nonce = useNonce()
 

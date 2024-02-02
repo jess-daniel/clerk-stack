@@ -7,6 +7,7 @@ import {
 } from '#app/components/ui/tooltip.tsx'
 import { cn } from '#app/utils/misc.tsx'
 import { logos } from './logos/logos.ts'
+import { useAuth } from "@clerk/remix";
 
 export const meta: MetaFunction = () => [{ title: 'Epic Notes' }]
 
@@ -28,6 +29,11 @@ const rowClasses: Record<(typeof logos)[number]['row'], string> = {
 }
 
 export default function Index() {
+	const { isLoaded, userId, sessionId, getToken } = useAuth();
+	console.log("isLoaded", isLoaded ?? 'null')
+	console.log("userId", userId ?? 'null')
+	console.log("sessionId", sessionId ?? 'null')
+	console.log("getToken", getToken ?? 'null')
 	return (
 		<main className="font-poppins grid h-full place-items-center">
 			<div className="grid place-items-center px-4 py-16 xl:grid-cols-2 xl:gap-24">

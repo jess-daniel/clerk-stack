@@ -16,7 +16,7 @@ import { updatePrimaryCacheValue } from '#app/routes/admin+/cache_.sqlite.tsx'
 import { getInstanceInfo, getInstanceInfoSync } from './litefs.server.ts'
 import { cachifiedTimingReporter, type Timings } from './timing.server.ts'
 
-const CACHE_DATABASE_PATH = process.env.CACHE_DATABASE_PATH
+const CACHE_DATABASE_PATH = process.env.CACHE_DATABASE_PATH;
 
 const cacheDb = remember('cacheDb', createDatabase)
 

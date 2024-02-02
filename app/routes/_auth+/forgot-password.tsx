@@ -17,7 +17,6 @@ import { prisma } from '#app/utils/db.server.ts'
 import { sendEmail } from '#app/utils/email.server.ts'
 import { checkHoneypot } from '#app/utils/honeypot.server.ts'
 import { EmailSchema, UsernameSchema } from '#app/utils/user-validation.ts'
-import { prepareVerification } from './verify.tsx'
 
 const ForgotPasswordSchema = z.object({
 	usernameOrEmail: z.union([EmailSchema, UsernameSchema]),
@@ -60,30 +59,6 @@ export async function action({ request }: ActionFunctionArgs) {
 		where: { OR: [{ email: usernameOrEmail }, { username: usernameOrEmail }] },
 		select: { email: true, username: true },
 	})
-
-	const { verifyUrl, redirectTo, otp } = await prepareVerification({
-		period: 10 * 60,
-		request,
-		type: 'reset-password',
-		target: usernameOrEmail,
-	})
-
-	const response = await sendEmail({
-		to: user.email,
-		subject: `Epic Notes Password Reset`,
-		react: (
-			<ForgotPasswordEmail onboardingUrl={verifyUrl.toString()} otp={otp} />
-		),
-	})
-
-	if (response.status === 'success') {
-		return redirect(redirectTo.toString())
-	} else {
-		return json(
-			{ result: submission.reply({ formErrors: [response.error.message] }) },
-			{ status: 500 },
-		)
-	}
 }
 
 function ForgotPasswordEmail({
